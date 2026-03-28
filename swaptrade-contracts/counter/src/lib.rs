@@ -42,9 +42,27 @@ mod nft_marketplace;
 mod nft_fractional;
 mod nft_lending;
 
+// Zero-Knowledge Proof module for private transactions
+mod zkp_types;
+mod zkp_circuits;
+mod zkp_errors;
+mod zkp_verification;
+mod private_transaction;
+mod zkp_proof_generation;
+
 // Re-export invariant functions for external use
 pub use invariants::verify_contract_invariants;
 pub use liquidity_pool::{LiquidityPool, PoolRegistry, Route};
+
+// ZKP exports for contract interface
+pub use zkp_types::{
+    PrivateTransaction, ZKProof, ProofScheme, RangeProof, BalanceProof,
+    TransactionWitness, Commitment, AuditLogEntry, AuditEventType, ProofVerificationResult,
+};
+pub use zkp_errors::ZKPError;
+pub use zkp_verification::ProofVerifier;
+pub use private_transaction::{PrivateTransactionBuilder, PrivateTransactionProcessor, WitnessManager, AuditTrailManager};
+pub use zkp_proof_generation::ProofGenerator;
 
 use portfolio::{Asset, CachedPortfolio, CachedTopTraders, LPPosition, Portfolio};
 pub use portfolio::{Badge, Metrics, Transaction};
