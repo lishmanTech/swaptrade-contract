@@ -30,7 +30,17 @@ mod trading {
     include!("../trading.rs");
 }
 mod analytics;
-mod analytics;
+mod migration;
+
+// NFT module
+mod nft_types;
+mod nft_errors;
+mod nft_storage;
+mod nft_events;
+mod nft_minting;
+mod nft_marketplace;
+mod nft_fractional;
+mod nft_lending;
 
 // Re-export invariant functions for external use
 pub use invariants::verify_contract_invariants;
@@ -42,7 +52,11 @@ pub use rate_limit::{RateLimitStatus, RateLimiter};
 pub use tiers::UserTier;
 use trading::perform_swap;
 use analytics::{PortfolioAnalytics, TimeWindow, PerformanceMetrics, AssetAllocation, BenchmarkComparison, PeriodReturns};
-pub use analytics::{TimeWindow, PerformanceMetrics, AssetAllocation, BenchmarkComparison, PeriodReturns};
+
+// NFT imports
+use nft_types::*;
+use nft_errors::NFTError;
+use nft_storage::*;
 
 use crate::errors::SwapTradeError;
 use crate::storage::{ADMIN_KEY, PAUSED_KEY};
@@ -828,6 +842,19 @@ impl CounterContract {
 
     pub fn set_pool_liquidity(env: Env, token: Symbol, amount: i128) {
         let mut portfolio: Portfolio = env
+            .storage()
+            .instance()
+            .get(&())
+            .unwrap_or_else(|| Portfolio::new(&env));
+        let asset = if token == symbol_short!("XLM") {
+            Asset::XLM
+        } else {
+            Asset::Custom(token)
+        };
+        portfolio.set_liquidity(asset, amount);
+        env.storage().instance().set(&(), &portfolio);
+    }
+
     /// Get comprehensive performance metrics for a user
     pub fn get_performance_metrics(
         env: Env,
@@ -866,19 +893,12 @@ impl CounterContract {
             .instance()
             .get(&())
             .unwrap_or_else(|| Portfolio::new(&env));
-        let asset = if token == symbol_short!("XLM") {
-            Asset::XLM
-        } else {
-            Asset::Custom(token)
-        };
-        portfolio.set_liquidity(asset, amount);
-        env.storage().instance().set(&(), &portfolio);
+
+        PortfolioAnalytics::get_benchmark_comparison(&env, &portfolio, user, benchmark_id, time_window)
     }
 
     pub fn set_max_slippage_bps(env: Env, bps: u32) {
         env.storage().instance().set(&symbol_short!("MAX_SLIP"), &bps);
-
-        PortfolioAnalytics::get_benchmark_comparison(&env, &portfolio, user, benchmark_id, time_window)
     }
 
     /// Calculate period returns between timestamps
