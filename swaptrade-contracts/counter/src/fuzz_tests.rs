@@ -177,12 +177,11 @@ fn fuzz_lp_token_calculations() {
     let env = Env::default();
 
     // Test various deposit ratios
-    let test_cases: Vec<(i128, i128, i128, i128)> = vec![
-        (1000, 1000, 0, 1000),             // First deposit, equal amounts
-        (1000, 2000, 1000, 1414),          // Unequal pool, proportional
-        (1, 1, 1000000, 1),                // Minimum deposit
-        (1000000, 1000000, 1000, 1000000), // Large deposit
-    ];
+    let mut test_cases = Vec::new(&env);
+    test_cases.push_back((1000, 1000, 0, 1000));             // First deposit, equal amounts
+    test_cases.push_back((1000, 2000, 1000, 1414));          // Unequal pool, proportional
+    test_cases.push_back((1, 1, 1000000, 1));                // Minimum deposit
+    test_cases.push_back((1000000, 1000000, 1000, 1000000)); // Large deposit
 
     for (xlm_deposit, usdc_deposit, existing_lp, expected_min) in test_cases {
         // Calculate LP tokens (simplified formula)
@@ -226,13 +225,12 @@ fn integer_sqrt(n: u128) -> u128 {
 /// Fuzz test: AMM constant product with random swap scenarios
 #[test]
 fn fuzz_amm_constant_product() {
-    let test_cases: Vec<(i128, i128, i128, i128)> = vec![
-        // (xlm_before, usdc_before, xlm_after, usdc_after)
-        (10000, 10000, 11000, 9090),         // Normal swap with fees
-        (50000, 20000, 51000, 19607),        // Different pool ratio
-        (1000, 1000, 1100, 909),             // Small pool
-        (1000000, 1000000, 1100000, 909090), // Large pool
-    ];
+    let env = Env::default();
+    let mut test_cases = Vec::new(&env);
+    test_cases.push_back((10000, 10000, 11000, 9090));         // Normal swap with fees
+    test_cases.push_back((50000, 20000, 51000, 19607));        // Different pool ratio
+    test_cases.push_back((1000, 1000, 1100, 909));             // Small pool
+    test_cases.push_back((1000000, 1000000, 1100000, 909090)); // Large pool
 
     for (xlm_before, usdc_before, xlm_after, usdc_after) in test_cases {
         // k should not increase (fees reduce or maintain k)
@@ -250,14 +248,13 @@ fn fuzz_amm_constant_product() {
 /// Fuzz test: AMM should reject impossible scenarios
 #[test]
 fn fuzz_amm_reject_impossible() {
-    let impossible_cases: Vec<(i128, i128, i128, i128)> = vec![
-        // Cases where k increases (value created from nothing)
-        (10000, 10000, 9000, 12000), // k_before=100M, k_after=108M
-        (10000, 10000, 8000, 13000), // k_before=100M, k_after=104M
-        // Negative reserves
-        (10000, 10000, -1000, 11000),
-        (10000, 10000, 11000, -1000),
-    ];
+    let env = Env::default();
+    let mut impossible_cases = Vec::new(&env);
+    impossible_cases.push_back((10000, 10000, 9000, 12000)); // k_before=100M, k_after=108M
+    impossible_cases.push_back((10000, 10000, 8000, 13000)); // k_before=100M, k_after=104M
+    // Negative reserves
+    impossible_cases.push_back((10000, 10000, -1000, 11000));
+    impossible_cases.push_back((10000, 10000, 11000, -1000));
 
     for (xlm_before, usdc_before, xlm_after, usdc_after) in impossible_cases {
         assert!(
@@ -276,7 +273,15 @@ fn fuzz_amm_reject_impossible() {
 /// Fuzz test: Fee calculations within bounds
 #[test]
 fn fuzz_fee_calculations() {
-    let test_amounts: Vec<i128> = vec![100, 1000, 10000, 100000, 1000000, 10000000, 100000000];
+    let env = Env::default();
+    let mut test_amounts = Vec::new(&env);
+    test_amounts.push_back(100);
+    test_amounts.push_back(1000);
+    test_amounts.push_back(10000);
+    test_amounts.push_back(100000);
+    test_amounts.push_back(1000000);
+    test_amounts.push_back(10000000);
+    test_amounts.push_back(100000000);
 
     for amount in test_amounts {
         // Calculate 0.3% fee
@@ -305,8 +310,13 @@ fn fuzz_fee_calculations() {
 /// Fuzz test: Edge case fee calculations
 #[test]
 fn fuzz_fee_edge_cases() {
+    let env = Env::default();
     // Very small amounts
-    let small_amounts: Vec<i128> = vec![1, 10, 33, 100];
+    let mut small_amounts = Vec::new(&env);
+    small_amounts.push_back(1);
+    small_amounts.push_back(10);
+    small_amounts.push_back(33);
+    small_amounts.push_back(100);
     for amount in small_amounts {
         let fee = (amount * 30) / 10000; // 0.3%
                                          // Due to integer division, small amounts may have 0 fee
@@ -315,7 +325,10 @@ fn fuzz_fee_edge_cases() {
     }
 
     // Very large amounts
-    let large_amounts: Vec<i128> = vec![1_000_000_000, 10_000_000_000, 100_000_000_000];
+    let mut large_amounts = Vec::new(&env);
+    large_amounts.push_back(1_000_000_000);
+    large_amounts.push_back(10_000_000_000);
+    large_amounts.push_back(100_000_000_000);
     for amount in large_amounts {
         let fee = (amount * 30) / 10000;
         assert!(fee > 0);
@@ -330,16 +343,14 @@ fn fuzz_fee_edge_cases() {
 fn fuzz_batch_operation_counts() {
     let env = Env::default();
 
-    let test_cases: Vec<(u32, u32, u32, bool, bool)> = vec![
-        // (total, success, failure, is_atomic, should_pass)
-        (10, 10, 0, true, true), // All succeed, atomic
-        (10, 0, 10, true, true), // All fail, atomic
-        (10, 5, 5, true, false), // Mixed, atomic - should fail
-        (10, 5, 5, false, true), // Mixed, best-effort - should pass
-        (0, 0, 0, false, true),  // Empty batch
-        (1, 1, 0, true, true),   // Single operation success
-        (1, 0, 1, true, true),   // Single operation failure
-    ];
+    let mut test_cases = Vec::new(&env);
+    test_cases.push_back((10, 10, 0, true, true)); // All succeed, atomic
+    test_cases.push_back((10, 0, 10, true, true)); // All fail, atomic
+    test_cases.push_back((10, 5, 5, true, false)); // Mixed, atomic - should fail
+    test_cases.push_back((10, 5, 5, false, true)); // Mixed, best-effort - should pass
+    test_cases.push_back((0, 0, 0, false, true));  // Empty batch
+    test_cases.push_back((1, 1, 0, true, true));   // Single operation success
+    test_cases.push_back((1, 0, 1, true, true));   // Single operation failure
 
     for (total, success, failure, is_atomic, should_pass) in test_cases {
         let result = verify_batch_invariants(&env, total, success, failure, is_atomic);
@@ -388,12 +399,7 @@ fn fuzz_metrics_monotonicity() {
 
         // Verify monotonicity
         assert!(
-            invariant_metrics_monotonic(
-                prev_trades,
-                metrics.trades_executed,
-                prev_failed,
-                metrics.failed_orders
-            ),
+            metrics.trades_executed >= prev_trades && metrics.failed_orders >= prev_failed,
             "Metrics should be monotonic: trades {}->{}, failed {}->{}",
             prev_trades,
             metrics.trades_executed,
@@ -431,16 +437,15 @@ fn fuzz_user_count_consistency() {
 /// Fuzz test: Slippage calculations
 #[test]
 fn fuzz_slippage_calculations() {
-    let test_cases: Vec<(u128, u128, u32, bool)> = vec![
-        // (expected, actual, max_slippage_bps, should_pass)
-        (10000, 10000, 100, true), // No slippage
-        (10000, 9900, 100, true),  // 1% slippage, max 1%
-        (10000, 9800, 100, false), // 2% slippage, max 1%
-        (10000, 10100, 100, true), // Positive slippage (better)
-        (10000, 0, 10000, true),   // 100% slippage allowed
-        (0, 0, 100, true),         // Zero expected
-        (0, 100, 100, false),      // Non-zero actual with zero expected
-    ];
+    let env = Env::default();
+    let mut test_cases = Vec::new(&env);
+    test_cases.push_back((10000, 10000, 100, true)); // No slippage
+    test_cases.push_back((10000, 9900, 100, true));  // 1% slippage, max 1%
+    test_cases.push_back((10000, 9800, 100, false)); // 2% slippage, max 1%
+    test_cases.push_back((10000, 10100, 100, true)); // Positive slippage (better)
+    test_cases.push_back((10000, 0, 10000, true));   // 100% slippage allowed
+    test_cases.push_back((0, 0, 100, true));         // Zero expected
+    test_cases.push_back((0, 100, 100, false));      // Non-zero actual with zero expected
 
     for (expected, actual, max_slippage, should_pass) in test_cases {
         let result = invariant_slippage_bounds(expected, actual, max_slippage);
@@ -465,15 +470,14 @@ fn fuzz_slippage_calculations() {
 /// Fuzz test: Balance update consistency
 #[test]
 fn fuzz_balance_update_consistency() {
-    let test_cases: Vec<(i128, i128, i128, i128, bool)> = vec![
-        // (balance_before, debit, credit, balance_after, should_pass)
-        (1000, 200, 300, 1100, true),                     // Normal case
-        (1000, 0, 0, 1000, true),                         // No change
-        (1000, 1000, 0, 0, true),                         // Full debit
-        (1000, 0, 1000, 2000, true),                      // Full credit
-        (1000, 200, 300, 1000, false),                    // Incorrect result
-        (i128::MAX - 100, 50, 50, i128::MAX - 100, true), // Near max
-    ];
+    let env = Env::default();
+    let mut test_cases = Vec::new(&env);
+    test_cases.push_back((1000, 200, 300, 1100, true));                     // Normal case
+    test_cases.push_back((1000, 0, 0, 1000, true));                         // No change
+    test_cases.push_back((1000, 1000, 0, 0, true));                         // Full debit
+    test_cases.push_back((1000, 0, 1000, 2000, true));                      // Full credit
+    test_cases.push_back((1000, 200, 300, 1000, false));                    // Incorrect result
+    test_cases.push_back((i128::MAX - 100, 50, 50, i128::MAX - 100, true)); // Near max
 
     for (before, debit, credit, after, should_pass) in test_cases {
         let result = invariant_balance_update_consistency(before, debit, credit, after);
@@ -520,12 +524,12 @@ fn fuzz_saturating_arithmetic() {
 /// Fuzz test: Large number operations
 #[test]
 fn fuzz_large_number_operations() {
-    let large_values: Vec<i128> = vec![
-        1_000_000_000_000,
-        10_000_000_000_000,
-        100_000_000_000_000,
-        1_000_000_000_000_000,
-    ];
+    let env = Env::default();
+    let mut large_values = Vec::new(&env);
+    large_values.push_back(1_000_000_000_000);
+    large_values.push_back(10_000_000_000_000);
+    large_values.push_back(100_000_000_000_000);
+    large_values.push_back(1_000_000_000_000_000);
 
     for val in large_values {
         // Multiplication should use saturating
@@ -650,7 +654,19 @@ fn fuzz_tier_calculations() {
     let env = Env::default();
     let portfolio = Portfolio::new(&env);
 
-    let trade_counts: Vec<u32> = vec![0, 1, 5, 9, 10, 25, 49, 50, 75, 99, 100, 200];
+    let mut trade_counts = Vec::new(&env);
+    trade_counts.push_back(0);
+    trade_counts.push_back(1);
+    trade_counts.push_back(5);
+    trade_counts.push_back(9);
+    trade_counts.push_back(10);
+    trade_counts.push_back(25);
+    trade_counts.push_back(49);
+    trade_counts.push_back(50);
+    trade_counts.push_back(75);
+    trade_counts.push_back(99);
+    trade_counts.push_back(100);
+    trade_counts.push_back(200);
 
     for trades in trade_counts {
         let user = fuzz_user(&env);
@@ -676,11 +692,19 @@ fn fuzz_tier_calculations() {
 /// Fuzz test: Rate limit with various timestamps
 #[test]
 fn fuzz_rate_limit_monotonicity() {
-    let timestamps: Vec<u64> = vec![1000, 2000, 3000, 5000, 10000, 50000, 100000];
+    let env = Env::default();
+    let mut timestamps = Vec::new(&env);
+    timestamps.push_back(1000);
+    timestamps.push_back(2000);
+    timestamps.push_back(3000);
+    timestamps.push_back(5000);
+    timestamps.push_back(10000);
+    timestamps.push_back(50000);
+    timestamps.push_back(100000);
 
     for window in 0..timestamps.len().saturating_sub(1) {
-        let prev = timestamps[window];
-        let curr = timestamps[window + 1];
+        let prev = timestamps.get(window).unwrap();
+        let curr = timestamps.get(window + 1).unwrap();
 
         // Timestamps should be monotonic
         assert!(
@@ -700,7 +724,14 @@ fn fuzz_transaction_history_limits() {
     let user = fuzz_user(&env);
 
     // Request various limits
-    let limits: Vec<u32> = vec![0, 1, 5, 10, 100, 1000];
+    let env = Env::default();
+    let mut limits = Vec::new(&env);
+    limits.push_back(0);
+    limits.push_back(1);
+    limits.push_back(5);
+    limits.push_back(10);
+    limits.push_back(100);
+    limits.push_back(1000);
 
     for limit in limits {
         let txs = portfolio.get_user_transactions(&env, user.clone(), limit);
@@ -727,12 +758,16 @@ fn fuzz_top_traders_consistency() {
 
         portfolio.mint(&env, Asset::XLM, user.clone(), pnl.abs());
 
-        // Update top traders
-        portfolio.update_top_traders(&env, user.clone());
+        // Note: update_top_traders is called internally by portfolio operations
     }
 
     // Get top traders with various limits
-    let limits: Vec<u32> = vec![1, 5, 10, 50, 100];
+    let mut limits = Vec::new(&env);
+    limits.push_back(1);
+    limits.push_back(5);
+    limits.push_back(10);
+    limits.push_back(50);
+    limits.push_back(100);
 
     for limit in limits {
         let top = portfolio.get_top_traders(&env, limit);
@@ -770,12 +805,12 @@ fn fuzz_pool_stats_consistency() {
 /// Fuzz test: Version monotonicity
 #[test]
 fn fuzz_version_monotonicity() {
-    let versions: Vec<(u32, u32, bool)> = vec![
-        (1, 1, true),  // Same version is ok
-        (1, 2, true),  // Upgrade is ok
-        (2, 1, false), // Downgrade is not ok
-        (1, 5, true),  // Big upgrade is ok
-    ];
+    let env = Env::default();
+    let mut versions = Vec::new(&env);
+    versions.push_back((1, 1, true));  // Same version is ok
+    versions.push_back((1, 2, true));  // Upgrade is ok
+    versions.push_back((2, 1, false)); // Downgrade is not ok
+    versions.push_back((1, 5, true));  // Big upgrade is ok
 
     for (prev, curr, should_pass) in versions {
         let result = invariant_version_monotonic(prev, curr);

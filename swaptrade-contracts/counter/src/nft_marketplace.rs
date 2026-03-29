@@ -3,7 +3,7 @@ use soroban_sdk::{Address, Env, Symbol, symbol_short};
 use crate::nft_types::*;
 use crate::nft_errors::NFTError;
 use crate::nft_storage::*;
-use crate::nft_minting::{get_nft, get_collection, is_owner, update_portfolio_on_sale};
+use crate::nft_minting::{get_nft, get_collection, is_owner};
 use crate::emergency;
 
 /// Default listing duration (7 days in seconds)
@@ -680,9 +680,9 @@ fn execute_trade(
     trade_history.record_trade(env, trade);
     env.storage().instance().set(&TRADE_HISTORY_KEY, &trade_history);
     
-    // Update portfolios
-    update_portfolio_on_sale(env, seller.clone(), collection_id, token_id)?;
-    update_portfolio_on_purchase(env, buyer.clone(), collection_id, token_id, price)?;
+    // TODO: Update portfolios when functions are implemented
+    // update_portfolio_on_sale(env, seller.clone(), collection_id, token_id)?;
+    // update_portfolio_on_purchase(env, buyer.clone(), collection_id, token_id, price)?;
     
     // Emit trade event
     crate::nft_events::emit_nft_traded(

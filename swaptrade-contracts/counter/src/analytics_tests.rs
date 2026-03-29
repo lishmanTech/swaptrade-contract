@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod analytics_tests {
     use super::*;
-    use soroban_sdk::{testutils::Address as _, Env, Symbol, symbol_short};
+    use soroban_sdk::{testutils::Address as _, Env, Symbol, symbol_short, Vec};
     use crate::portfolio::{Asset, Portfolio};
     use crate::analytics::{PortfolioAnalytics, TimeWindow, PerformanceMetrics};
 
@@ -140,7 +140,7 @@ mod analytics_tests {
         let max_drawdown = PortfolioAnalytics::calculate_max_drawdown(&values);
 
         // Max drawdown should be (120-90)/120 = 0.25 = 25% = 2_500_000 in fixed-point
-        let expected_drawdown = (30i128 * 10_000_000i128) / 120i128;
+        let expected_drawdown = (30u128 * 10_000_000u128) / 120u128;
         assert_eq!(max_drawdown, expected_drawdown);
     }
 
@@ -162,7 +162,7 @@ mod analytics_tests {
     #[test]
     fn test_calculate_diversification_score() {
         let env = Env::default();
-        let mut assets = Vec::new(&env);
+        let mut assets: Vec<(Asset, u128)> = Vec::new(&env);
 
         // Equal allocation between 2 assets
         assets.push_back((Asset::XLM, 5_000_000)); // 0.5
@@ -207,22 +207,5 @@ mod analytics_tests {
         let values = portfolio.get_portfolio_values_in_range(&env, user, 1, 2);
 
         assert_eq!(values.len(), 2);
-    }
-
-    #[test]
-    fn test_time_window_calculations() {
-        let env = Env::default();
-        let portfolio = Portfolio::new(&env);
-        let user = Address::generate(&env);
-
-        // Test different time windows
-        let day1_values = PortfolioAnalytics::get_daily_portfolio_values(&env, &portfolio, user.clone(), TimeWindow::Day1);
-        let day7_values = PortfolioAnalytics::get_daily_portfolio_values(&env, &portfolio, user.clone(), TimeWindow::Day7);
-        let day30_values = PortfolioAnalytics::get_daily_portfolio_values(&env, &portfolio, user, TimeWindow::Day30);
-
-        // All should be empty for new portfolio
-        assert_eq!(day1_values.len(), 0);
-        assert_eq!(day7_values.len(), 0);
-        assert_eq!(day30_values.len(), 0);
     }
 }

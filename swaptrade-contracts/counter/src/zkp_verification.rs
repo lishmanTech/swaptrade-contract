@@ -274,14 +274,14 @@ mod tests {
     #[test]
     fn test_verify_empty_proof() {
         let params = CircuitParameters {
-            domain: Bytes::new(&soroban_sdk::Env::new()),
-            generator_g: Bytes::new(&soroban_sdk::Env::new()),
-            generator_h: Bytes::new(&soroban_sdk::Env::new()),
+            domain: Bytes::new(&soroban_sdk::Env::default()),
+            generator_g: Bytes::new(&soroban_sdk::Env::default()),
+            generator_h: Bytes::new(&soroban_sdk::Env::default()),
             hash_function: 1,
         };
         let verifier = ProofVerifier::new(params);
         let empty_proof = ZKProof {
-            proof_data: Bytes::new(&soroban_sdk::Env::new()),
+            proof_data: Bytes::new(&soroban_sdk::Env::default()),
             scheme: ProofScheme::Bulletproof,
         };
         assert_eq!(

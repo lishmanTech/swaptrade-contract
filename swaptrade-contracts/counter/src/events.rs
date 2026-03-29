@@ -103,31 +103,31 @@ impl Events {
         env.events()
             .publish((Symbol::new(env, "AdminResumed"), admin), (timestamp,));
     }
+}
 
-impl Events {
-    /// Emitted whenever an alert fires. Carries enough metadata for an
-    /// off-chain indexer to route a push notification or webhook call.
-    ///
-    /// Topic  : ("AlertTriggered", owner_address, alert_id)
-    /// Payload: (alert_kind, notification_method, timestamp)
-    ///
-    /// NOTE: This event is also emitted directly inside `alerts.rs` via
-    /// `emit_alert_triggered`. This stub documents the schema for the audit
-    /// trail and can be called from `events.rs` if you prefer to centralise
-    /// event emission in future.
-    pub fn alert_triggered(
-        env: &Env,
-        owner: Address,
-        alert_id: u64,
-        // Using Symbol here keeps the payload ABI-stable regardless of the
-        // internal AlertKind enum layout across contract upgrades.
-        kind_tag: Symbol,
-        notification_method_tag: Symbol,
-        timestamp: u64,
-    ) {
-        env.events().publish(
-            (Symbol::new(env, "AlertTriggered"), owner, alert_id),
-            (kind_tag, notification_method_tag, timestamp),
+/// Emitted whenever an alert fires. Carries enough metadata for an
+/// off-chain indexer to route a push notification or webhook call.
+///
+/// Topic  : ("AlertTriggered", owner_address, alert_id)
+/// Payload: (alert_kind, notification_method, timestamp)
+///
+/// NOTE: This event is also emitted directly inside `alerts.rs` via
+/// `emit_alert_triggered`. This stub documents the schema for the audit
+/// trail and can be called from `events.rs` if you prefer to centralise
+/// event emission in future.
+pub fn alert_triggered(
+    env: &Env,
+    owner: Address,
+    alert_id: u64,
+    // Using Symbol here keeps the payload ABI-stable regardless of the
+    // internal AlertKind enum layout across contract upgrades.
+    kind_tag: Symbol,
+    notification_method_tag: Symbol,
+    timestamp: u64,
+) {
+    env.events().publish(
+        (Symbol::new(env, "AlertTriggered"), owner, alert_id),
+        (kind_tag, notification_method_tag, timestamp),
         );
     }
 
@@ -148,8 +148,13 @@ impl Events {
             (kind_tag, expires_at),
         );
     }
-}
-    pub fn performance_metrics_calculated(
+
+/// Emitted when performance metrics are calculated for a user.
+/// Used for tracking portfolio performance analytics.
+///
+/// Topic  : ("PerformanceMetricsCalculated", user_address)
+/// Payload: (time_window, sharpe_ratio, max_drawdown, timestamp)
+pub fn performance_metrics_calculated(
         env: &Env,
         user: Address,
         time_window: crate::analytics::TimeWindow,
@@ -163,7 +168,12 @@ impl Events {
         );
     }
 
-    pub fn asset_allocation_analyzed(
+/// Emitted when asset allocation analysis is completed.
+/// Used for portfolio diversification tracking.
+///
+/// Topic  : ("AssetAllocationAnalyzed", user_address)
+/// Payload: (total_assets, diversification_score, timestamp)
+pub fn asset_allocation_analyzed(
         env: &Env,
         user: Address,
         total_assets: u32,
@@ -176,7 +186,12 @@ impl Events {
         );
     }
 
-    pub fn benchmark_comparison_calculated(
+/// Emitted when benchmark comparison is calculated.
+/// Used for performance relative to market benchmarks.
+///
+/// Topic  : ("BenchmarkComparisonCalculated", user_address, benchmark_id)
+/// Payload: (alpha, beta, timestamp)
+pub fn benchmark_comparison_calculated(
         env: &Env,
         user: Address,
         benchmark_id: Symbol,
@@ -190,7 +205,12 @@ impl Events {
         );
     }
 
-    pub fn period_returns_calculated(
+/// Emitted when period returns are calculated.
+/// Used for tracking returns over specific time periods.
+///
+/// Topic  : ("PeriodReturnsCalculated", user_address)
+/// Payload: (start_timestamp, end_timestamp, time_weighted_return, timestamp)
+pub fn period_returns_calculated(
         env: &Env,
         user: Address,
         start_timestamp: u64,
@@ -203,4 +223,3 @@ impl Events {
             (start_timestamp, end_timestamp, time_weighted_return, timestamp),
         );
     }
-}

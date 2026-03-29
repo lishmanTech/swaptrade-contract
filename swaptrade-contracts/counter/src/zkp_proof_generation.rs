@@ -3,7 +3,7 @@
 /// This module provides utilities for generating zero-knowledge proofs off-chain.
 /// In production, clients would use this to create proofs before submitting transactions.
 
-use soroban_sdk::Bytes;
+use soroban_sdk::{Bytes, Env};
 use crate::zkp_types::{
     RangeProof, TransactionWitness, ZKProof, ProofScheme, Commitment, BalanceProof,
 };
@@ -41,7 +41,7 @@ impl ProofGenerator {
 
         // Placeholder:
         Ok(RangeProof {
-            proof: Bytes::new(&soroban_sdk::Env::new()),
+            proof: Bytes::new(&Env::default()),
             commitment: blinding_factor.clone(),
             bit_length,
         })
@@ -86,8 +86,8 @@ impl ProofGenerator {
 
         // In production: create zero-knowledge proof of balance >= required_amount
         Ok(BalanceProof {
-            balance_commitment: Bytes::new(&soroban_sdk::Env::new()),
-            sufficiency_proof: Bytes::new(&soroban_sdk::Env::new()),
+            balance_commitment: Bytes::new(&Env::default()),
+            sufficiency_proof: Bytes::new(&Env::default()),
             proof_timestamp: 0,
         })
     }
@@ -103,7 +103,7 @@ impl ProofGenerator {
         // 4. Generate inner product proofs for each constraint
 
         Ok(ZKProof {
-            proof_data: Bytes::new(&soroban_sdk::Env::new()),
+            proof_data: Bytes::new(&Env::default()),
             scheme: ProofScheme::Bulletproof,
         })
     }
@@ -119,7 +119,7 @@ impl ProofGenerator {
         // 4. Output proof as A, B, C points
 
         Ok(ZKProof {
-            proof_data: Bytes::new(&soroban_sdk::Env::new()),
+            proof_data: Bytes::new(&Env::default()),
             scheme: ProofScheme::ZkSnark,
         })
     }
@@ -132,7 +132,7 @@ impl ProofGenerator {
         // In production: only for testing
 
         Ok(ZKProof {
-            proof_data: Bytes::new(&soroban_sdk::Env::new()),
+            proof_data: Bytes::new(&Env::default()),
             scheme: ProofScheme::SimplifiedProof,
         })
     }
@@ -157,10 +157,10 @@ pub mod serialization {
     use crate::zkp_types::ZKProof;
 
     /// Serialize a proof to bytes for transmission
-    pub fn serialize_proof(_proof: &ZKProof) -> Result<Vec<u8>, &'static str> {
+    pub fn serialize_proof(_proof: &ZKProof) -> Result<std::vec::Vec<u8>, &'static str> {
         // In production: encode proof components to bytes
         // For now: placeholder
-        Ok(Vec::new())
+        Ok(std::vec::Vec::new())
     }
 
     /// Deserialize bytes back to a proof
@@ -223,14 +223,16 @@ mod tests {
 
     #[test]
     fn test_range_proof_generation() {
-        let blinding = Bytes::new(&soroban_sdk::Env::new());
+        let env = Env::default();
+        let blinding = Bytes::new(&env);
         let result = ProofGenerator::generate_range_proof(100, &blinding, 64);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_range_proof_invalid_bit_length() {
-        let blinding = Bytes::new(&soroban_sdk::Env::new());
+        let env = Env::default();
+        let blinding = Bytes::new(&env);
         let result = ProofGenerator::generate_range_proof(100, &blinding, 0);
         assert!(result.is_err());
 
@@ -240,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_witness_validation() {
-        let env = soroban_sdk::Env::new();
+        let env = Env::default();
         let witness = TransactionWitness {
             amount: 100,
             amount_blinding: Bytes::new(&env),

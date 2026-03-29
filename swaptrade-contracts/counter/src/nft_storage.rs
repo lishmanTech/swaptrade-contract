@@ -10,17 +10,21 @@ pub const LISTING_REGISTRY_KEY: Symbol = symbol_short!("list_reg");
 pub const OFFER_REGISTRY_KEY: Symbol = symbol_short!("offer_reg");
 pub const LOAN_REGISTRY_KEY: Symbol = symbol_short!("loan_reg");
 pub const PORTFOLIO_REGISTRY_KEY: Symbol = symbol_short!("nft_port");
-pub const TRADE_HISTORY_KEY: Symbol = symbol_short!("trade_hist");
+pub const TRADE_HISTORY_KEY: Symbol = symbol_short!("trade_h");
 pub const VALUATION_REGISTRY_KEY: Symbol = symbol_short!("val_reg");
-pub const FRACTIONAL_SHARES_KEY: Symbol = symbol_short!("frac_shares");
+pub const FRACTIONAL_SHARES_KEY: Symbol = symbol_short!("frac_s");
 pub const NEXT_TOKEN_ID_KEY: Symbol = symbol_short!("next_tok");
 pub const NEXT_COLLECTION_ID_KEY: Symbol = symbol_short!("next_col");
 pub const NEXT_LISTING_ID_KEY: Symbol = symbol_short!("next_list");
-pub const NEXT_OFFER_ID_KEY: Symbol = symbol_short!("next_offer");
+pub const NEXT_OFFER_ID_KEY: Symbol = symbol_short!("next_o");
 pub const NEXT_LOAN_ID_KEY: Symbol = symbol_short!("next_loan");
 pub const MARKETPLACE_PAUSED_KEY: Symbol = symbol_short!("nft_pause");
 pub const PLATFORM_FEE_BPS_KEY: Symbol = symbol_short!("plat_fee");
 pub const FEE_RECIPIENT_KEY: Symbol = symbol_short!("fee_recv");
+
+// Liquidation-specific storage keys
+pub const LIQUIDATION_QUEUE_KEY: Symbol = symbol_short!("liq_queue");
+pub const LIQUIDATION_BID_REGISTRY_KEY: Symbol = symbol_short!("liq_bid");
 
 /// Default platform fee in basis points (2.5%)
 pub const DEFAULT_PLATFORM_FEE_BPS: u32 = 250;

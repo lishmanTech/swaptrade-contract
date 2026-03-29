@@ -1,5 +1,5 @@
 #![cfg_attr(not(test), no_std)]
-use soroban_sdk::{Address, Env, Symbol, symbol_short};
+use soroban_sdk::{Address, Env, Symbol, String, Map, Vec, symbol_short};
 use crate::nft_types::*;
 use crate::nft_errors::NFTError;
 use crate::nft_storage::*;
@@ -14,6 +14,17 @@ const MAX_LOAN_DURATION: u64 = 31536000;
 const MAX_INTEREST_RATE_BPS: u32 = 100;
 /// Liquidation threshold (grace period after due date)
 const LIQUIDATION_GRACE_PERIOD: u64 = 86400; // 1 day
+
+/// Loan-to-value ratio in basis points that triggers liquidation (70%)
+const LIQUIDATION_TRIGGER_LTV_BPS: u32 = 7000;
+/// Partial liquidation threshold LTV (100%)
+const PARTIAL_LIQUIDATION_LTV_BPS: u32 = 10000;
+/// Liquidation penalty charged to borrower in basis points (5%)
+const LIQUIDATION_PENALTY_BPS: u32 = 500;
+/// Protocol fee collected from liquidation in basis points (1%)
+const LIQUIDATION_PROTOCOL_FEE_BPS: u32 = 100;
+/// Maximum queued loans
+const MAX_LIQUIDATION_QUEUE_SIZE: usize = 128;
 
 /// Create a loan request using NFT as collateral
 /// 
@@ -640,4 +651,303 @@ pub fn can_use_as_collateral(env: &Env, collection_id: u64, token_id: u64) -> bo
     } else {
         false
     }
+}
+
+/// Get the most recent collateral valuation for a loan NFT.
+pub fn get_collateral_value(env: &Env, collection_id: u64, token_id: u64) -> Result<i128, NFTError> {
+    let valuation_registry: ValuationRegistry = env.storage().instance()
+        .get(&VALUATION_REGISTRY_KEY)
+        .unwrap_or_else(|| ValuationRegistry::new(env));
+
+    if let Some(valuation) = valuation_registry.get_valuation(collection_id, token_id) {
+        if valuation.estimated_value > 0 {
+            return Ok(valuation.estimated_value);
+        }
+        if valuation.collection_floor > 0 {
+            return Ok(valuation.collection_floor);
+        }
+    }
+
+    // Fallback to collection floor price
+    let collection_floor = crate::nft::get_collection_floor_price(env, collection_id);
+    if collection_floor > 0 {
+        return Ok(collection_floor);
+    }
+
+    Err(NFTError::ValuationNotAvailable)
+}
+
+/// Calculate loan health (LTV) in basis points.
+pub fn calculate_loan_ltv(env: &Env, loan_id: u64) -> Result<u32, NFTError> {
+    let loan = get_loan(env, loan_id).ok_or(NFTError::LoanNotFound)?;
+    if !loan.is_active || loan.is_repaid || loan.is_liquidated {
+        return Err(NFTError::LoanNotActive);
+    }
+
+    let current_time = env.ledger().timestamp();
+    let total_due = loan.total_due(current_time);
+    let collateral_value = get_collateral_value(env, loan.collection_id, loan.token_id)?;
+    if collateral_value <= 0 {
+        return Ok(u32::MAX);
+    }
+
+    let ltv = ((total_due.saturating_mul(10000)) / collateral_value) as u32;
+    Ok(ltv)
+}
+
+/// Check if loan is undercollateralized.
+pub fn is_loan_undercollateralized(env: &Env, loan_id: u64) -> Result<bool, NFTError> {
+    let ltv = calculate_loan_ltv(env, loan_id)?;
+    Ok(ltv > LIQUIDATION_TRIGGER_LTV_BPS)
+}
+
+fn get_liquidation_queue(env: &Env) -> Vec<u64> {
+    env.storage().instance().get(&LIQUIDATION_QUEUE_KEY).unwrap_or_else(|| Vec::new(env))
+}
+
+fn set_liquidation_queue(env: &Env, queue: &Vec<u64>) {
+    env.storage().instance().set(&LIQUIDATION_QUEUE_KEY, queue);
+}
+
+/// Add a loan to the liquidation queue if it is undercollateralized.
+pub fn enqueue_liquidation(env: &Env, loan_id: u64) -> Result<(), NFTError> {
+    if !is_loan_undercollateralized(env, loan_id)? {
+        return Err(NFTError::LoanNotUndercollateralized);
+    }
+
+    let mut queue = get_liquidation_queue(env);
+    if queue.len() as usize >= MAX_LIQUIDATION_QUEUE_SIZE {
+        return Err(NFTError::LiquidationQueueFull);
+    }
+
+    for i in 0..queue.len() {
+        if queue.get(i).unwrap() == loan_id {
+            return Ok(());
+        }
+    }
+
+    queue.push_back(loan_id);
+    set_liquidation_queue(env, &queue);
+    crate::nft_events::emit_liquidation_queued(env, loan_id);
+    Ok(())
+}
+
+fn get_best_liquidation_bid(env: &Env, loan_id: u64) -> Option<(Address, i128, u64)> {
+    let bids: Map<u64, (Address, i128, u64)> = env.storage().instance()
+        .get(&LIQUIDATION_BID_REGISTRY_KEY)
+        .unwrap_or_else(|| Map::new(env));
+    bids.get(loan_id)
+}
+
+fn set_best_liquidation_bid(env: &Env, loan_id: u64, bidder: Address, amount: i128, timestamp: u64) {
+    let mut bids: Map<u64, (Address, i128, u64)> = env.storage().instance()
+        .get(&LIQUIDATION_BID_REGISTRY_KEY)
+        .unwrap_or_else(|| Map::new(env));
+    bids.set(loan_id, (bidder, amount, timestamp));
+    env.storage().instance().set(&LIQUIDATION_BID_REGISTRY_KEY, &bids);
+}
+
+fn clear_liquidation_bid(env: &Env, loan_id: u64) {
+    let mut bids: Map<u64, (Address, i128, u64)> = env.storage().instance()
+        .get(&LIQUIDATION_BID_REGISTRY_KEY)
+        .unwrap_or_else(|| Map::new(env));
+    bids.remove(loan_id);
+    env.storage().instance().set(&LIQUIDATION_BID_REGISTRY_KEY, &bids);
+}
+
+/// Place a liquidation auction bid.
+pub fn place_liquidation_bid(
+    env: &Env,
+    loan_id: u64,
+    bidder: Address,
+    bid_amount: i128,
+) -> Result<(), NFTError> {
+    bidder.require_auth();
+    if bid_amount <= 0 {
+        return Err(NFTError::InvalidAmount);
+    }
+
+    let loan = get_loan(env, loan_id).ok_or(NFTError::LoanNotFound)?;
+    if !loan.is_active || loan.is_repaid || loan.is_liquidated {
+        return Err(NFTError::LoanNotActive);
+    }
+
+    if loan.borrower == bidder {
+        return Err(NFTError::SelfDealing);
+    }
+
+    if !is_loan_undercollateralized(env, loan_id)? {
+        return Err(NFTError::LoanNotUndercollateralized);
+    }
+
+    let current_time = env.ledger().timestamp();
+    if let Some((_, best_amount, _)) = get_best_liquidation_bid(env, loan_id) {
+        if bid_amount <= best_amount {
+            return Err(NFTError::InvalidLiquidationBid);
+        }
+    }
+
+    set_best_liquidation_bid(env, loan_id, bidder.clone(), bid_amount, current_time);
+    crate::nft_events::emit_liquidation_bid_placed(env, loan_id, bidder, bid_amount);
+    Ok(())
+}
+
+/// Determine whether to do partial or full liquidation and execute it.
+pub fn execute_liquidation(env: &Env, loan_id: u64) -> Result<(), NFTError> {
+    let mut loan_registry: LoanRegistry = env.storage().instance()
+        .get(&LOAN_REGISTRY_KEY)
+        .ok_or(NFTError::LoanNotFound)?;
+
+    let loan = loan_registry.get_loan(loan_id).ok_or(NFTError::LoanNotFound)?;
+    if !loan.is_active || loan.is_repaid || loan.is_liquidated {
+        return Err(NFTError::LoanNotActive);
+    }
+
+    let current_time = env.ledger().timestamp();
+    let total_due = loan.total_due(current_time);
+    let collateral_value = get_collateral_value(env, loan.collection_id, loan.token_id)?;
+    let ltv = if collateral_value == 0 {
+        u32::MAX
+    } else {
+        ((total_due.saturating_mul(10000)) / collateral_value) as u32
+    };
+
+    if ltv <= LIQUIDATION_TRIGGER_LTV_BPS {
+        return Err(NFTError::LoanNotUndercollateralized);
+    }
+
+    let (winner, recovered_value, bad_debt) = if ltv <= PARTIAL_LIQUIDATION_LTV_BPS {
+        // Partial liquidation: recover 50% of debt and keep loan alive.
+        let recovered = (total_due * 5000) / 10000;
+        let remaining_due = total_due.saturating_sub(recovered);
+        let mut updated_loan = loan.clone();
+        updated_loan.repayment_amount = remaining_due;
+        loan_registry.update_loan(updated_loan);
+        env.storage().instance().set(&LOAN_REGISTRY_KEY, &loan_registry);
+
+        crate::nft_events::emit_liquidation_executed(
+            env,
+            loan_id,
+            loan.lender.clone(),
+            recovered,
+            remaining_due,
+        );
+        (loan.lender.clone(), recovered, remaining_due)
+    } else {
+        // Full liquidation path with auction preference
+        if let Some((bid_winner, bid_amount, _)) = get_best_liquidation_bid(env, loan_id) {
+            // Auction-based liquidation
+            // Transfer NFT to highest bidder
+            let mut nft_registry: NFTRegistry = env.storage().instance()
+                .get(&NFT_REGISTRY_KEY)
+                .unwrap_or_else(|| NFTRegistry::new(env));
+            nft_registry.transfer_ownership(env, loan.collection_id, loan.token_id, bid_winner.clone())?;
+            env.storage().instance().set(&NFT_REGISTRY_KEY, &nft_registry);
+
+            let penalty = (total_due * LIQUIDATION_PENALTY_BPS as i128) / 10000;
+            let protocol_fee = (total_due * LIQUIDATION_PROTOCOL_FEE_BPS as i128) / 10000;
+            let to_lender = (bid_amount.saturating_sub(penalty)).saturating_sub(protocol_fee);
+            let bad_debt = if bid_amount >= total_due { 0 } else { total_due.saturating_sub(bid_amount) };
+
+            let mut updated_loan = loan.clone();
+            updated_loan.is_liquidated = true;
+            updated_loan.is_active = false;
+            loan_registry.update_loan(updated_loan);
+            env.storage().instance().set(&LOAN_REGISTRY_KEY, &loan_registry);
+
+            decrement_portfolio_loans_taken(env, loan.borrower.clone())?;
+            decrement_portfolio_loans_given(env, loan.lender.clone())?;
+            update_portfolio_on_liquidation(env, bid_winner.clone(), loan.collection_id, loan.token_id)?;
+
+            clear_liquidation_bid(env, loan_id);
+            crate::nft_events::emit_liquidation_executed(env, loan_id, bid_winner.clone(), bid_amount, bad_debt);
+            crate::nft_events::emit_platform_fee_collected(env, protocol_fee, get_fee_recipient(env).unwrap_or_else(|| loan.lender.clone()));
+            crate::nft_events::emit_liquidation_notification(env, loan.borrower.clone(), loan_id, String::from_slice(env, "Your position has been liquidated."));
+            (bid_winner.clone(), bid_amount, bad_debt)
+        } else {
+            // No auction bids, lender takes collateral
+            let mut nft_registry: NFTRegistry = env.storage().instance()
+                .get(&NFT_REGISTRY_KEY)
+                .unwrap_or_else(|| NFTRegistry::new(env));
+            nft_registry.transfer_ownership(env, loan.collection_id, loan.token_id, loan.lender.clone())?;
+            env.storage().instance().set(&NFT_REGISTRY_KEY, &nft_registry);
+
+            let penalty = (total_due * LIQUIDATION_PENALTY_BPS as i128) / 10000;
+            let protocol_fee = (total_due * LIQUIDATION_PROTOCOL_FEE_BPS as i128) / 10000;
+            let recovered = collateral_value.saturating_sub(penalty).saturating_sub(protocol_fee);
+            let bad_debt = if collateral_value >= total_due { 0 } else { total_due.saturating_sub(collateral_value) };
+
+            let mut updated_loan = loan.clone();
+            updated_loan.is_liquidated = true;
+            updated_loan.is_active = false;
+            loan_registry.update_loan(updated_loan);
+            env.storage().instance().set(&LOAN_REGISTRY_KEY, &loan_registry);
+
+            decrement_portfolio_loans_taken(env, loan.borrower.clone())?;
+            decrement_portfolio_loans_given(env, loan.lender.clone())?;
+            update_portfolio_on_liquidation(env, loan.lender.clone(), loan.collection_id, loan.token_id)?;
+
+            clear_liquidation_bid(env, loan_id);
+            crate::nft_events::emit_liquidation_executed(env, loan_id, loan.lender.clone(), recovered, bad_debt);
+            crate::nft_events::emit_platform_fee_collected(env, protocol_fee, get_fee_recipient(env).unwrap_or_else(|| loan.lender.clone()));
+            crate::nft_events::emit_liquidation_notification(env, loan.borrower.clone(), loan_id, String::from_slice(env, "Your position has been liquidated to cover bad debt."));
+            (loan.lender.clone(), recovered, bad_debt)
+        }
+    };
+
+    Ok(())
+}
+
+/// Scan all active loans and enqueue undercollateralized ones.
+pub fn monitor_and_queue_liquidations(env: &Env) -> u64 {
+    let mut queue = get_liquidation_queue(env);
+    let loan_registry: LoanRegistry = env.storage().instance()
+        .get(&LOAN_REGISTRY_KEY)
+        .unwrap_or_else(|| LoanRegistry::new(env));
+
+    let mut processed = 0u64;
+    let keys = loan_registry.loans.keys();
+    for i in 0..keys.len() {
+        if let Some(loan_id) = keys.get(i) {
+            if processed >= MAX_LIQUIDATION_QUEUE_SIZE as u64 {
+                break;
+            }
+            if let Some(loan) = loan_registry.get_loan(loan_id) {
+                if loan.is_active && !loan.is_repaid && !loan.is_liquidated {
+                    if let Ok(true) = is_loan_undercollateralized(env, loan_id) {
+                        if !queue.iter().any(|id| id == &loan_id) {
+                            queue.push_back(loan_id);
+                            crate::nft_events::emit_liquidation_queued(env, loan_id);
+                            processed = processed.saturating_add(1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    set_liquidation_queue(env, &queue);
+    processed
+}
+
+/// Process up to `max_items` loans in queue.
+pub fn process_liquidation_queue(env: &Env, max_items: u32) -> Result<u32, NFTError> {
+    let queue = get_liquidation_queue(env);
+    let mut new_queue = Vec::new(env);
+    let mut processed = 0u32;
+
+    for i in 0..queue.len() {
+        if let Some(loan_id) = queue.get(i) {
+            if processed < max_items {
+                if execute_liquidation(env, loan_id).is_ok() {
+                    processed = processed.saturating_add(1);
+                    continue;
+                }
+            }
+            new_queue.push_back(loan_id);
+        }
+    }
+
+    set_liquidation_queue(env, &new_queue);
+    Ok(processed)
 }

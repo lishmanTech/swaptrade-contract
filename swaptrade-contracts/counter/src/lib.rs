@@ -8,7 +8,7 @@ mod events;
 mod invariants;
 mod alerts;
 #[cfg(test)]
-mod alerts_tests;
+mod alert_tests;
 mod rate_limit;
 mod storage;
 mod liquidity_pool;
@@ -111,6 +111,18 @@ const CACHE_TTL_KEY: Symbol = symbol_short!("cttl");
 const CACHE_HITS_KEY: Symbol = symbol_short!("chits");
 const CACHE_MISSES_KEY: Symbol = symbol_short!("cmiss");
 const DEFAULT_CACHE_TTL_SECONDS: u64 = 60;
+const POOL_REGISTRY_KEY: Symbol = symbol_short!("lpreg");
+
+fn load_pool_registry(env: &Env) -> PoolRegistry {
+    env.storage()
+        .instance()
+        .get(&POOL_REGISTRY_KEY)
+        .unwrap_or_else(|| PoolRegistry::new(env))
+}
+
+fn save_pool_registry(env: &Env, registry: &PoolRegistry) {
+    env.storage().instance().set(&POOL_REGISTRY_KEY, registry);
+}
 
 #[derive(Clone)]
 #[contracttype]
@@ -844,6 +856,81 @@ impl CounterContract {
         result
     }
 
+    // ===== MULTI-TOKEN POOL REGISTRY =====
+
+    pub fn register_pool(
+        env: Env,
+        admin: Address,
+        token_a: Symbol,
+        token_b: Symbol,
+        initial_a: i128,
+        initial_b: i128,
+        fee_tier: u32,
+    ) -> Result<u64, ContractError> {
+        let mut registry = load_pool_registry(&env);
+        let pool_id = registry.register_pool(&env, admin, token_a, token_b, initial_a, initial_b, fee_tier)?;
+        save_pool_registry(&env, &registry);
+        Ok(pool_id)
+    }
+
+    pub fn pool_add_liquidity(
+        env: Env,
+        pool_id: u64,
+        amount_a: i128,
+        amount_b: i128,
+        provider: Address,
+    ) -> Result<i128, ContractError> {
+        let mut registry = load_pool_registry(&env);
+        let lp_tokens = registry.add_liquidity(&env, pool_id, amount_a, amount_b, provider)?;
+        save_pool_registry(&env, &registry);
+        Ok(lp_tokens)
+    }
+
+    pub fn pool_remove_liquidity(
+        env: Env,
+        pool_id: u64,
+        lp_tokens: i128,
+        provider: Address,
+    ) -> Result<(i128, i128), ContractError> {
+        let mut registry = load_pool_registry(&env);
+        let result = registry.remove_liquidity(&env, pool_id, lp_tokens, provider)?;
+        save_pool_registry(&env, &registry);
+        Ok(result)
+    }
+
+    pub fn pool_swap(
+        env: Env,
+        pool_id: u64,
+        token_in: Symbol,
+        amount_in: i128,
+        min_amount_out: i128,
+    ) -> Result<i128, ContractError> {
+        let mut registry = load_pool_registry(&env);
+        let result = registry.swap(&env, pool_id, token_in, amount_in, min_amount_out)?;
+        save_pool_registry(&env, &registry);
+        Ok(result)
+    }
+
+    pub fn find_best_route(
+        env: Env,
+        token_in: Symbol,
+        token_out: Symbol,
+        amount_in: i128,
+    ) -> Option<Route> {
+        let registry = load_pool_registry(&env);
+        registry.find_best_route(&env, token_in, token_out, amount_in)
+    }
+
+    pub fn get_pool(env: Env, pool_id: u64) -> Option<LiquidityPool> {
+        let registry = load_pool_registry(&env);
+        registry.get_pool(pool_id)
+    }
+
+    pub fn get_pool_lp_balance(env: Env, pool_id: u64, provider: Address) -> i128 {
+        let registry = load_pool_registry(&env);
+        registry.get_lp_balance(pool_id, provider)
+    }
+
     pub fn set_price(env: Env, token_pair: (Symbol, Symbol), price: u128) {
         set_stored_price(&env, token_pair, price);
     }
@@ -955,6 +1042,8 @@ mod migration_tests;
 mod oracle_tests;
 #[cfg(test)]
 mod rate_limit_tests;
+#[cfg(test)]
+mod nft_lending_tests;
 #[cfg(test)]
 mod transaction_tests; // NEW: Fuzz tests for security hardening
 

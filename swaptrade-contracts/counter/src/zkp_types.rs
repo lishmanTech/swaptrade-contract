@@ -93,7 +93,7 @@ pub struct PrivateTransaction {
     /// Commitment to sender's balance after transaction
     pub sender_new_balance_commitment: Bytes,
     /// Commitment to receiver's balance after transaction
-    pub receiver_new_balance_commitment: Bytes,
+    pub receiver_new_balance_commit: Bytes,
     /// Proof that the transaction is valid
     pub validity_proof: ZKProof,
     /// Range proof for the amount

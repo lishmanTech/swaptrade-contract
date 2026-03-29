@@ -115,6 +115,14 @@ pub enum NFTError {
     CannotLiquidate = 1509,
     /// Insufficient repayment amount
     InsufficientRepayment = 1510,
+    /// Loan is not undercollateralized
+    LoanNotUnderCollat = 1511,
+    /// Liquidation queue is full
+    LiqQueueFull = 1512,
+    /// No bids in liquidation auction
+    NoAuctionBids = 1513,
+    /// Invalid liquidation bid
+    InvalidLiqBid = 1514,
 
     // ===== Royalty Errors (1600-1699) =====
     /// Royalty payment failed

@@ -41,19 +41,9 @@ pub enum NotificationMethod {
 #[contracttype]
 #[derive(Clone, Debug)]
 pub enum AlertKind {
-    Price {
-        token: Symbol,
-        target_price: i128,
-        direction: PriceDirection,
-    },
-    Portfolio {
-        trigger_type: PortfolioTrigger,
-        threshold_bps: i128,
-    },
-    Market {
-        market_id: Symbol,
-        signal_type: MarketSignal,
-    },
+    Price(Symbol, i128, PriceDirection),
+    Portfolio(PortfolioTrigger, i128),
+    Market(Symbol, MarketSignal),
 }
 
 /// A single alert record.
@@ -116,11 +106,7 @@ pub fn create_price_alert(
     let alert = Alert {
         id,
         owner: owner.clone(),
-        kind: AlertKind::Price {
-            token,
-            target_price,
-            direction,
-        },
+        kind: AlertKind::Price(token, target_price, direction),
         notification_method,
         expires_at,
         active: true,
@@ -142,10 +128,7 @@ pub fn create_portfolio_alert(
     let alert = Alert {
         id,
         owner: owner.clone(),
-        kind: AlertKind::Portfolio {
-            trigger_type,
-            threshold_bps,
-        },
+        kind: AlertKind::Portfolio(trigger_type, threshold_bps),
         notification_method,
         expires_at,
         active: true,
@@ -169,10 +152,7 @@ pub fn create_market_alert(
     let alert = Alert {
         id,
         owner: owner.clone(),
-        kind: AlertKind::Market {
-            market_id,
-            signal_type,
-        },
+        kind: AlertKind::Market(market_id, signal_type),
         notification_method,
         expires_at,
         active: true,
@@ -259,12 +239,7 @@ pub fn check_price_alerts(env: &Env, token: &Symbol, current_price: i128) {
                 continue;
             }
 
-            if let AlertKind::Price {
-                token: ref alert_token,
-                target_price,
-                ref direction,
-            } = alert.kind.clone()
-            {
+            if let AlertKind::Price(ref alert_token, target_price, ref direction) = alert.kind.clone() {
                 if alert_token == token {
                     let fired = match direction {
                         PriceDirection::Above => current_price >= target_price,
@@ -320,11 +295,7 @@ pub fn check_portfolio_alerts(
             continue;
         }
 
-        if let AlertKind::Portfolio {
-            ref trigger_type,
-            threshold_bps,
-        } = alert.kind.clone()
-        {
+        if let AlertKind::Portfolio(ref trigger_type, threshold_bps) = alert.kind.clone() {
             let fired = match trigger_type {
                 PortfolioTrigger::ValueChangeBps => {
                     if reference_value == 0 {
@@ -385,11 +356,7 @@ pub fn check_market_alerts(env: &Env, market_id: &Symbol, signal_type: &MarketSi
                 continue;
             }
 
-            if let AlertKind::Market {
-                market_id: ref alert_market,
-                signal_type: ref alert_signal,
-            } = alert.kind.clone()
-            {
+            if let AlertKind::Market(ref alert_market, ref alert_signal) = alert.kind.clone() {
                 if alert_market == market_id && alert_signal == signal_type {
                     alert.last_triggered_at = now;
                     if alert.expires_at != 0 {

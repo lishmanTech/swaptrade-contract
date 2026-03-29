@@ -343,6 +343,49 @@ pub fn emit_loan_liquidated(
     );
 }
 
+/// Emit event when a loan is queued for liquidation
+pub fn emit_liquidation_queued(env: &Env, loan_id: u64) {
+    env.events().publish(
+        (Symbol::new(env, "LiquidationQueued"), loan_id),
+        (),
+    );
+}
+
+/// Emit event when a liquidation auction bid is placed
+pub fn emit_liquidation_bid_placed(
+    env: &Env,
+    loan_id: u64,
+    bidder: Address,
+    bid_amount: i128,
+) {
+    env.events().publish(
+        (Symbol::new(env, "LiquidationBidPlaced"), loan_id),
+        (bidder, bid_amount),
+    );
+}
+
+/// Emit event when a liquidation auction is settled
+pub fn emit_liquidation_executed(
+    env: &Env,
+    loan_id: u64,
+    winner: Address,
+    recovered_amount: i128,
+    bad_debt: i128,
+) {
+    env.events().publish(
+        (Symbol::new(env, "LiquidationExecuted"), loan_id),
+        (winner, recovered_amount, bad_debt),
+    );
+}
+
+/// Emit notification on liquidation events
+pub fn emit_liquidation_notification(env: &Env, user: Address, loan_id: u64, message: String) {
+    env.events().publish(
+        (Symbol::new(env, "LiquidationNotification"), user),
+        (loan_id, message),
+    );
+}
+
 /// Emit event when a loan is cancelled
 pub fn emit_loan_cancelled(
     env: &Env,

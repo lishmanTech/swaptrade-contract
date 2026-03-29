@@ -167,14 +167,18 @@ impl WitnessManager {
         receiver_balance: i128,
     ) -> TransactionWitness {
         // Generate random blinding factors and nonce
-        let nonce_bytes = env.crypto_sha256(&Bytes::new(env));
-        
+        let nonce_hash = env.crypto().sha256(&Bytes::new(env));
+        let nonce: Bytes = nonce_hash.into();
+
+        let amount_blinding = env.prng().gen_len(32u32);
+        let balance_blinding = env.prng().gen_len(32u32);
+
         TransactionWitness {
             amount,
-            amount_blinding: Bytes::new(env),
-            nonce: nonce_bytes,
+            amount_blinding,
+            nonce,
             sender_balance,
-            balance_blinding: Bytes::new(env),
+            balance_blinding,
         }
     }
 
@@ -194,10 +198,10 @@ impl WitnessManager {
         // Keep only what's needed for verification
         TransactionWitness {
             amount: 0,
-            amount_blinding: Bytes::new(&soroban_sdk::Env::new()),
+            amount_blinding: Bytes::new(&soroban_sdk::Env::default()),
             nonce: Bytes::new(&soroban_sdk::Env::new()),
             sender_balance: 0,
-            balance_blinding: Bytes::new(&soroban_sdk::Env::new()),
+            balance_blinding: Bytes::new(&soroban_sdk::Env::default()),
         }
     }
 }
@@ -213,12 +217,13 @@ impl AuditTrailManager {
         event_type: AuditEventType,
         verification_result: ProofVerificationResult,
     ) -> AuditLogEntry {
+        let transaction_hash = env.crypto().sha256(transaction_id);
         AuditLogEntry {
             transaction_id: transaction_id.clone(),
             event_type,
             timestamp: env.ledger().timestamp(),
             verification_result,
-            transaction_hash: Bytes::new(env),
+            transaction_hash: transaction_hash.into(),
         }
     }
 
@@ -271,7 +276,7 @@ pub mod private_swap {
 
 /// Batch Private Transaction Processing
 pub mod batch_private_transactions {
-    use soroban_sdk::{Env, Vec};
+    use soroban_sdk::{Env, Vec, Bytes};
     use crate::zkp_types::PrivateTransaction;
     use super::PrivateTransactionProcessor;
 
@@ -292,12 +297,13 @@ pub mod batch_private_transactions {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as TestAddress;
 
     #[test]
     fn test_transaction_builder() {
-        let env = soroban_sdk::Env::new();
-        let sender = Address::generate(&env);
-        let receiver = Address::generate(&env);
+        let env = Env::default();
+        let sender = <soroban_sdk::testutils::Address as soroban_sdk::testutils::address::TestAddress>::generate(&env);
+        let receiver = TestAddress::generate(&env);
         
         let builder = PrivateTransactionBuilder::new(sender, receiver, 1000);
         assert_eq!(builder.amount, 1000);
@@ -305,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_witness_manager() {
-        let env = soroban_sdk::Env::new();
+        let env = Env::default();
         let witness = WitnessManager::create_witness(&env, 100, 500, 200);
         assert_eq!(witness.amount, 100);
         assert_eq!(witness.sender_balance, 500);
@@ -313,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_audit_entry_creation() {
-        let env = soroban_sdk::Env::new();
+        let env = Env::default();
         let tx_id = Bytes::new(&env);
         let entry = AuditTrailManager::create_audit_entry(
             &env,

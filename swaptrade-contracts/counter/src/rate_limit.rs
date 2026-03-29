@@ -128,7 +128,7 @@ impl TimeWindow {
 
     /// Get hourly window using cached boundary if available
     pub fn hourly_cached(env: &Env, current_timestamp: u64) -> Self {
-        let cache_key = symbol_short!("hourly_cache");
+        let cache_key = symbol_short!("hourly_c");
         
         // Try to get cached boundary
         if let Some(cached) = env.storage().persistent().get::<CachedWindowBoundary>(&cache_key) {
@@ -150,7 +150,7 @@ impl TimeWindow {
 
     /// Get daily window using cached boundary if available
     pub fn daily_cached(env: &Env, current_timestamp: u64) -> Self {
-        let cache_key = symbol_short!("daily_cache");
+        let cache_key = symbol_short!("daily_c");
         
         // Try to get cached boundary
         if let Some(cached) = env.storage().persistent().get::<CachedWindowBoundary>(&cache_key) {
