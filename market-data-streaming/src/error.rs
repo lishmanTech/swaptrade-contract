@@ -37,6 +37,12 @@ pub enum MarketDataError {
     
     #[error("Tokio error: {0}")]
     Tokio(#[from] tokio::task::JoinError),
+
+    #[error("HFT protection violation: {0:?}")]
+    HFTViolation(crate::hft_protection::HFTViolation),
+
+    #[error("Circuit breaker triggered")]
+    CircuitBreakerTriggered,
 }
 
 pub type Result<T> = std::result::Result<T, MarketDataError>;
